@@ -42,7 +42,8 @@
     try { JFCustomWidget.requestFrameResize({ height: document.body.scrollHeight + 25 }); } catch (e) {}
   }
 
-  var lastRaw = "";   // kept for the diagnostic box when parsing fails
+  var lastRaw = "";
+  var readyData = null;   // kept for the diagnostic box when parsing fails
 
   // Accepts [{code, name?, countries:["FR",...] | [{code,label}]}], as an array or
   // as a string that may be URL-encoded and/or HTML-escaped by the time it reaches us.
@@ -95,10 +96,12 @@
 
   function render() {
     if (!devices.length) {
-      var diag = lastRaw
-        ? '<div class="diag"><b>Diagnostic</b> (value received, ' + lastRaw.length + ' chars, could not be read):<br>' +
-          esc(lastRaw.slice(0, 300)) + '</div>'
-        : '<div class="diag"><b>Diagnostic:</b> no value reached the widget at all.</div>';
+      var diag = '<div class="diag"><b>Diagnostic</b><br>' +
+        'value: ' + (lastRaw ? lastRaw.length + ' chars → ' + esc(lastRaw.slice(0, 200))
+                             : '<b>none received</b>') + '<br><br>' +
+        'ready payload: ' + esc(JSON.stringify(readyData).slice(0, 400)) + '<br><br>' +
+        'iframe query: ' + esc(window.location.search.slice(0, 300)) + '<br><br>' +
+        'referrer: ' + esc(document.referrer || "(empty)") + '</div>';
       root.innerHTML = '<div class="warn"><b>No products found for your account.</b><br>' +
         'Please open this form using the personalised link we emailed you. ' +
         'If you reached it another way, contact regulatory@growthimports.eu.</div>' + diag;
@@ -166,6 +169,7 @@
     return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
 
   JFCustomWidget.subscribe("ready", function (data) {
+    readyData = data;
     devices = parse(data && (data.value !== undefined ? data.value : data.defaultValue));
     // Restore previous selections when GI reopens the submission.
     try {
