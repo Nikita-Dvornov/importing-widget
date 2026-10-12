@@ -3,83 +3,187 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GI Widget Probe</title>
+<title>Products and countries</title>
 <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 <style>
-  body { font: 13px/1.45 -apple-system, Segoe UI, Roboto, sans-serif; margin: 10px; color: #222; }
-  h2 { font-size: 13px; margin: 14px 0 4px; color: #555; }
-  pre { background: #f5f6f8; border: 1px solid #e1e4e8; border-radius: 6px; padding: 8px;
-        white-space: pre-wrap; word-break: break-all; margin: 0; max-height: 180px; overflow: auto; }
-  .ok { color: #137333; font-weight: 600; }
-  .no { color: #b3261e; font-weight: 600; }
-  input { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+  :root { --line:#e1e4e8; --muted:#6b7280; --accent:#0a4b78; }
+  body { font: 14px/1.5 "Philosopher", -apple-system, Segoe UI, Roboto, sans-serif; margin:0; color:#1f2328; }
+  .device { border:1px solid var(--line); border-radius:8px; margin-bottom:10px; overflow:hidden; }
+  .device.on { border-color:var(--accent); }
+  .head { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; background:#fafbfc; cursor:pointer; }
+  .device.on .head { background:#f1f6fa; }
+  .code { font-weight:600; letter-spacing:.2px; }
+  .name { color:var(--muted); font-size:12.5px; }
+  .body { padding:4px 12px 12px 33px; display:none; }
+  .device.on .body { display:block; }
+  .label { font-size:12px; color:var(--muted); margin:4px 0 6px; }
+  .countries { display:flex; flex-wrap:wrap; gap:6px 14px; }
+  .country { display:flex; align-items:center; gap:6px; font-size:13px; }
+  .actions { margin-top:8px; font-size:12px; }
+  .actions a { color:var(--accent); text-decoration:underline; cursor:pointer; margin-right:12px; }
+  .warn { background:#fff6e5; border:1px solid #f0c36d; border-radius:8px; padding:10px 12px; font-size:13px; }
+  .err { color:#b3261e; font-size:12.5px; margin-top:6px; display:none; }
+  .device.bad .err { display:block; }
+  .summary { font-size:12.5px; color:var(--muted); margin-top:10px; }
 </style>
 </head>
 <body>
-
-<h2>1. Prefilled value received on "ready"</h2>
-<pre id="val">(waiting for ready event…)</pre>
-
-<h2>2. Full "ready" payload</h2>
-<pre id="ready">—</pre>
-
-<h2>3. Widget settings</h2>
-<pre id="settings">—</pre>
-
-<h2>4. This iframe's own query string</h2>
-<pre id="qs">—</pre>
-
-<h2>5. document.referrer (can we see the parent form URL?)</h2>
-<pre id="ref">—</pre>
-
-<h2>6. Value this widget will submit</h2>
-<input id="out" value="probe-test-value">
+<div id="root"></div>
 
 <script>
 (function () {
-  var $ = function (id) { return document.getElementById(id); };
-  var show = function (id, v) {
-    $(id).textContent = (typeof v === "string") ? v : JSON.stringify(v, null, 1);
-  };
-
-  show("qs", window.location.search || "(none)");
-  show("ref", document.referrer || "(empty — parent URL not visible)");
+  var devices = [];      // [{code, name, countries:[{code,label}]}]
+  var picked  = {};      // code -> { on:bool, countries:Set }
+  var root = document.getElementById("root");
 
   function fit() {
-    try { JFCustomWidget.requestFrameResize({ height: document.body.scrollHeight + 30 }); } catch (e) {}
+    try { JFCustomWidget.requestFrameResize({ height: document.body.scrollHeight + 25 }); } catch (e) {}
   }
 
-  JFCustomWidget.subscribe("ready", function (data) {
-    show("ready", data);
+  // Accepts [{code, name?, countries:["FR",...] | [{code,label}]}]
+  function parse(raw) {
+    if (!raw) return [];
+    var data = raw;
+    if (typeof raw === "string") { try { data = JSON.parse(raw); } catch (e) { return []; } }
+    if (!Array.isArray(data)) return [];
+    return data.map(function (d) {
+      return {
+        code: String(d.code || d.budidi || "").trim(),
+        name: String(d.name || d.product || "").trim(),
+        countries: (d.countries || []).map(function (c) {
+          return (typeof c === "string") ? { code: c, label: c } : { code: c.code, label: c.label || c.code };
+        })
+      };
+    }).filter(function (d) { return d.code; });
+  }
 
-    // The question this probe exists to answer: does a prefilled value arrive?
-    var v = data && (data.value !== undefined ? data.value : data.defaultValue);
-    if (v !== undefined && v !== null && String(v).length) {
-      $("val").innerHTML = '<span class="ok">YES — value received:</span>\n' + String(v);
-      $("out").value = String(v);
-    } else {
-      $("val").innerHTML = '<span class="no">NO value arrived on ready.</span>\n' +
-        'Check sections 2-5 for another channel.';
+  function value() {
+    return devices.filter(function (d) { return picked[d.code] && picked[d.code].on; })
+      .map(function (d) {
+        return { code: d.code, countries: Array.from(picked[d.code].countries) };
+      });
+  }
+
+  function push() {
+    try { JFCustomWidget.sendData({ value: JSON.stringify(value()) }); } catch (e) {}
+    var sel = value();
+    document.getElementById("summary").textContent =
+      sel.length ? sel.length + " product(s) selected" : "No products selected yet.";
+  }
+
+  function render() {
+    if (!devices.length) {
+      root.innerHTML = '<div class="warn"><b>No products found for your account.</b><br>' +
+        'Please open this form using the personalised link we emailed you. ' +
+        'If you reached it another way, contact regulatory@growthimports.eu.</div>';
+      fit(); return;
     }
+    root.innerHTML = devices.map(function (d, i) {
+      return '<div class="device" id="d' + i + '">' +
+          '<label class="head"><input type="checkbox" data-dev="' + i + '">' +
+            '<span><span class="code">' + esc(d.code) + '</span>' +
+            (d.name ? '<br><span class="name">' + esc(d.name) + '</span>' : '') + '</span>' +
+          '</label>' +
+          '<div class="body">' +
+            '<div class="label">Countries where these devices will be made available:</div>' +
+            '<div class="countries">' +
+              d.countries.map(function (c, j) {
+                return '<label class="country"><input type="checkbox" data-dev="' + i + '" data-c="' + j + '">' +
+                       esc(c.label) + '</label>';
+              }).join("") +
+            '</div>' +
+            '<div class="actions"><a data-all="' + i + '">Select all</a><a data-none="' + i + '">Clear</a></div>' +
+            '<div class="err">Select at least one country for this product.</div>' +
+          '</div>' +
+        '</div>';
+    }).join("") + '<div class="summary" id="summary"></div>';
 
-    try { show("settings", JFCustomWidget.getWidgetSettings()); }
-    catch (e) { show("settings", "getWidgetSettings() failed: " + e.message); }
+    root.addEventListener("change", onChange);
+    root.addEventListener("click", onClick);
+    push(); fit();
+  }
 
-    fit();
+  function state(i) {
+    var d = devices[i];
+    if (!picked[d.code]) picked[d.code] = { on: false, countries: new Set() };
+    return picked[d.code];
+  }
+
+  function onChange(e) {
+    var t = e.target; if (t.tagName !== "INPUT") return;
+    var i = +t.getAttribute("data-dev"), st = state(i);
+    if (t.hasAttribute("data-c")) {
+      var c = devices[i].countries[+t.getAttribute("data-c")].code;
+      t.checked ? st.countries.add(c) : st.countries.delete(c);
+    } else {
+      st.on = t.checked;
+      document.getElementById("d" + i).classList.toggle("on", t.checked);
+    }
+    document.getElementById("d" + i).classList.remove("bad");
+    push(); fit();
+  }
+
+  function onClick(e) {
+    var all = e.target.getAttribute && e.target.getAttribute("data-all");
+    var none = e.target.getAttribute && e.target.getAttribute("data-none");
+    if (all === null && none === null) return;
+    var i = +(all !== null ? all : none), st = state(i);
+    devices[i].countries.forEach(function (c, j) {
+      var box = root.querySelector('input[data-dev="' + i + '"][data-c="' + j + '"]');
+      box.checked = (all !== null);
+      box.checked ? st.countries.add(c.code) : st.countries.delete(c.code);
+    });
+    push(); fit();
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+
+  JFCustomWidget.subscribe("ready", function (data) {
+    devices = parse(data && (data.value !== undefined ? data.value : data.defaultValue));
+    // Restore previous selections when GI reopens the submission.
+    try {
+      var prev = JSON.parse(data.value);
+      if (Array.isArray(prev) && prev.length && prev[0].countries && !prev[0].countries.length === false) {
+        prev.forEach(function (p) {
+          if (p.code && Array.isArray(p.countries) && p.countries.length) {
+            picked[p.code] = { on: true, countries: new Set(p.countries) };
+          }
+        });
+      }
+    } catch (e) {}
+    render();
+    // Re-apply restored ticks to the DOM.
+    devices.forEach(function (d, i) {
+      var st = picked[d.code]; if (!st || !st.on) return;
+      var head = root.querySelector('input[data-dev="' + i + '"]:not([data-c])');
+      if (head) { head.checked = true; document.getElementById("d" + i).classList.add("on"); }
+      d.countries.forEach(function (c, j) {
+        if (st.countries.has(c.code)) {
+          var box = root.querySelector('input[data-dev="' + i + '"][data-c="' + j + '"]');
+          if (box) box.checked = true;
+        }
+      });
+    });
+    push(); fit();
   });
 
-  // Persist whatever is in the box, so we can confirm it lands in the submission.
   JFCustomWidget.subscribe("submit", function () {
-    JFCustomWidget.sendSubmit({ valid: true, value: $("out").value });
+    var sel = value(), bad = false;
+    devices.forEach(function (d, i) {
+      var st = picked[d.code];
+      var empty = st && st.on && st.countries.size === 0;
+      document.getElementById("d" + i) && document.getElementById("d" + i).classList.toggle("bad", !!empty);
+      if (empty) bad = true;
+    });
+    if (bad || !sel.length) {
+      fit();
+      JFCustomWidget.sendSubmit({ valid: false, value: "" });
+      return;
+    }
+    JFCustomWidget.sendSubmit({ valid: true, value: JSON.stringify(sel) });
   });
-
-  $("out").addEventListener("input", function () {
-    try { JFCustomWidget.sendData({ value: $("out").value }); } catch (e) {}
-  });
-
-  window.addEventListener("load", fit);
 })();
 </script>
-
 </body>
 </html>

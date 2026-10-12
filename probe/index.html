@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GI Widget Probe</title>
+<script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
+<style>
+  body { font: 13px/1.45 -apple-system, Segoe UI, Roboto, sans-serif; margin: 10px; color: #222; }
+  h2 { font-size: 13px; margin: 14px 0 4px; color: #555; }
+  pre { background: #f5f6f8; border: 1px solid #e1e4e8; border-radius: 6px; padding: 8px;
+        white-space: pre-wrap; word-break: break-all; margin: 0; max-height: 180px; overflow: auto; }
+  .ok { color: #137333; font-weight: 600; }
+  .no { color: #b3261e; font-weight: 600; }
+  input { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+
+<h2>1. Prefilled value received on "ready"</h2>
+<pre id="val">(waiting for ready event…)</pre>
+
+<h2>2. Full "ready" payload</h2>
+<pre id="ready">—</pre>
+
+<h2>3. Widget settings</h2>
+<pre id="settings">—</pre>
+
+<h2>4. This iframe's own query string</h2>
+<pre id="qs">—</pre>
+
+<h2>5. document.referrer (can we see the parent form URL?)</h2>
+<pre id="ref">—</pre>
+
+<h2>6. Value this widget will submit</h2>
+<input id="out" value="probe-test-value">
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (id, v) {
+    $(id).textContent = (typeof v === "string") ? v : JSON.stringify(v, null, 1);
+  };
+
+  show("qs", window.location.search || "(none)");
+  show("ref", document.referrer || "(empty — parent URL not visible)");
+
+  function fit() {
+    try { JFCustomWidget.requestFrameResize({ height: document.body.scrollHeight + 30 }); } catch (e) {}
+  }
+
+  JFCustomWidget.subscribe("ready", function (data) {
+    show("ready", data);
+
+    // The question this probe exists to answer: does a prefilled value arrive?
+    var v = data && (data.value !== undefined ? data.value : data.defaultValue);
+    if (v !== undefined && v !== null && String(v).length) {
+      $("val").innerHTML = '<span class="ok">YES — value received:</span>\n' + String(v);
+      $("out").value = String(v);
+    } else {
+      $("val").innerHTML = '<span class="no">NO value arrived on ready.</span>\n' +
+        'Check sections 2-5 for another channel.';
+    }
+
+    try { show("settings", JFCustomWidget.getWidgetSettings()); }
+    catch (e) { show("settings", "getWidgetSettings() failed: " + e.message); }
+
+    fit();
+  });
+
+  // Persist whatever is in the box, so we can confirm it lands in the submission.
+  JFCustomWidget.subscribe("submit", function () {
+    JFCustomWidget.sendSubmit({ valid: true, value: $("out").value });
+  });
+
+  $("out").addEventListener("input", function () {
+    try { JFCustomWidget.sendData({ value: $("out").value }); } catch (e) {}
+  });
+
+  window.addEventListener("load", fit);
+})();
+</script>
+
+</body>
+</html>
