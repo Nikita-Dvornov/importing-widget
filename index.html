@@ -6,26 +6,36 @@
 <title>Products and countries</title>
 <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 <style>
-  :root { --line:#e1e4e8; --muted:#6b7280; --accent:#0a4b78; }
-  body { font: 14px/1.5 "Philosopher", -apple-system, Segoe UI, Roboto, sans-serif; margin:0; color:#1f2328; }
-  .device { border:1px solid var(--line); border-radius:8px; margin-bottom:10px; overflow:hidden; }
+  :root { --line:#e1e4e8; --muted:#6b7280; --accent:#0a4b78; --bad:#b3261e; }
+  body { font:14px/1.5 "Philosopher",-apple-system,Segoe UI,Roboto,sans-serif; margin:0; color:#1f2328; }
+  .device { border:1px solid var(--line); border-radius:8px; margin-bottom:10px; }
   .device.on { border-color:var(--accent); }
-  .head { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; background:#fafbfc; cursor:pointer; }
+  .head { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; background:#fafbfc; cursor:pointer; border-radius:7px 7px 0 0; }
   .device.on .head { background:#f1f6fa; }
-  .code { font-weight:600; letter-spacing:.2px; }
-  .name { color:var(--muted); font-size:12.5px; }
-  .body { padding:4px 12px 12px 33px; display:none; }
+  .code { font-weight:600; }
+  .sub { color:var(--muted); font-size:12.5px; }
+  .body { display:none; padding:2px 12px 12px 12px; }
   .device.on .body { display:block; }
-  .label { font-size:12px; color:var(--muted); margin:4px 0 6px; }
+  .lbl { font-size:12px; color:var(--muted); margin:10px 0 5px; }
   .countries { display:flex; flex-wrap:wrap; gap:6px 14px; }
   .country { display:flex; align-items:center; gap:6px; font-size:13px; }
-  .actions { margin-top:8px; font-size:12px; }
-  .actions a { color:var(--accent); text-decoration:underline; cursor:pointer; margin-right:12px; }
+  .links { margin-top:6px; font-size:12px; }
+  .links a { color:var(--accent); text-decoration:underline; cursor:pointer; margin-right:12px; }
+  .row { border-top:1px dashed var(--line); padding-top:8px; margin-top:8px; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 10px; }
+  .f { display:flex; flex-direction:column; gap:3px; }
+  .f.wide { grid-column:1 / -1; }
+  .f span { font-size:11.5px; color:var(--muted); }
+  .f span b { color:var(--bad); font-weight:400; }
+  input { font:13px inherit; padding:6px 7px; border:1px solid #ccd0d5; border-radius:5px; width:100%; box-sizing:border-box; }
+  input.miss { border-color:var(--bad); background:#fff7f7; }
+  .rowbar { display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-top:6px; }
+  .rowbar a { color:var(--accent); text-decoration:underline; cursor:pointer; }
   .warn { background:#fff6e5; border:1px solid #f0c36d; border-radius:8px; padding:10px 12px; font-size:13px; }
-  .err { color:#b3261e; font-size:12.5px; margin-top:6px; display:none; }
+  .diag { margin-top:10px; padding:8px 10px; background:#f5f6f8; border:1px solid var(--line); border-radius:6px;
+          font:11px/1.4 ui-monospace,Menlo,monospace; color:#444; word-break:break-all; }
+  .err { color:var(--bad); font-size:12.5px; margin-top:8px; display:none; }
   .device.bad .err { display:block; }
-  .diag { margin-top:10px; padding:8px 10px; background:#f5f6f8; border:1px solid var(--line);
-          border-radius:6px; font:11px/1.4 ui-monospace,Menlo,monospace; color:#444; word-break:break-all; }
   .summary { font-size:12.5px; color:var(--muted); margin-top:10px; }
 </style>
 </head>
@@ -34,184 +44,195 @@
 
 <script>
 (function () {
-  var devices = [];      // [{code, name, countries:[{code,label}]}]
-  var picked  = {};      // code -> { on:bool, countries:Set }
+  var FIELDS = [
+    { k:"name",       label:"Product Name (per B-UDI-DI)", req:true },
+    { k:"articleNo",  label:"Article No (Ref / Cat. No)",  req:true },
+    { k:"udi",        label:"UDI-DI / UDI-PI",             req:true, wide:true },
+    { k:"lot",        label:"Lot No.",                     req:true },
+    { k:"shelfLife",  label:"Shelf Life (if applicable)",  req:false, ph:"YYYY-MM-DD" },
+    { k:"qty",        label:"Total Order Quantity",        req:true }
+  ];
+
+  var catalog = [], state = {}, lastRaw = "", readyData = null;
   var root = document.getElementById("root");
 
-  function fit() {
-    try { JFCustomWidget.requestFrameResize({ height: document.body.scrollHeight + 25 }); } catch (e) {}
+  function fit(){ try{ JFCustomWidget.requestFrameResize({height:document.body.scrollHeight+25}); }catch(e){} }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
+    return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]; }); }
+
+  function decode(raw) {
+    lastRaw = (raw==null) ? "" : String(raw);
+    if (!raw) return null;
+    if (typeof raw !== "string") return raw;
+    var s = raw.trim().replace(/&quot;/g,'"').replace(/&#34;/g,'"').replace(/&amp;/g,"&");
+    var tries = [s];
+    if (/%5B|%7B|%22/i.test(s)) { try { tries.push(decodeURIComponent(s)); } catch(e){} }
+    for (var i=0;i<tries.length;i++){ try { return JSON.parse(tries[i]); } catch(e){} }
+    return null;
   }
 
-  var lastRaw = "";
-  var readyData = null;   // kept for the diagnostic box when parsing fails
+  function blankRow(dev){ return { name: dev.name || "", articleNo:"", udi:"", lot:"", shelfLife:"", qty:"" }; }
 
-  // Accepts [{code, name?, countries:["FR",...] | [{code,label}]}], as an array or
-  // as a string that may be URL-encoded and/or HTML-escaped by the time it reaches us.
-  function parse(raw) {
-    lastRaw = (raw === undefined || raw === null) ? "" : String(raw);
-    if (!raw) return [];
-    var data = raw;
-    if (typeof raw === "string") {
-      var s = raw.trim()
-        .replace(/&quot;/g, '"').replace(/&#34;/g, '"')
-        .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-      var tries = [s];
-      if (/%5B|%7B|%22/i.test(s)) { try { tries.push(decodeURIComponent(s)); } catch (e) {} }
-      if (s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
-        try { tries.push(JSON.parse(s)); } catch (e) {}   // double-encoded JSON string
-      }
-      data = null;
-      for (var i = 0; i < tries.length && data === null; i++) {
-        var t = tries[i];
-        if (typeof t !== "string") { data = t; break; }
-        try { data = JSON.parse(t); } catch (e) { data = null; }
-      }
-      if (data === null) return [];
-    }
-    if (!Array.isArray(data)) return [];
-    return data.map(function (d) {
+  function load(raw) {
+    var data = decode(raw);
+    if (!data) return;
+    // Either a bare catalog array (first load, from the link) or {catalog, selected} (saved submission)
+    var cat = Array.isArray(data) ? data : (data.catalog || []);
+    catalog = cat.map(function(d){
       return {
         code: String(d.code || d.budidi || "").trim(),
-        name: String(d.name || d.product || "").trim(),
-        countries: (d.countries || []).map(function (c) {
-          return (typeof c === "string") ? { code: c, label: c } : { code: c.code, label: c.label || c.code };
-        })
+        name: String(d.name || "").trim(),
+        countries: (d.countries||[]).map(function(c){
+          return (typeof c === "string") ? {code:c,label:c} : {code:c.code,label:c.label||c.code}; })
       };
-    }).filter(function (d) { return d.code; });
+    }).filter(function(d){ return d.code; });
+
+    catalog.forEach(function(d){ state[d.code] = { on:false, countries:new Set(), rows:[blankRow(d)] }; });
+
+    (data.selected || []).forEach(function(sel){
+      var st = state[sel.code]; if (!st) return;
+      st.on = true;
+      st.countries = new Set(sel.countries || []);
+      if (Array.isArray(sel.rows) && sel.rows.length) st.rows = sel.rows;
+    });
   }
 
   function value() {
-    return devices.filter(function (d) { return picked[d.code] && picked[d.code].on; })
-      .map(function (d) {
-        return { code: d.code, countries: Array.from(picked[d.code].countries) };
-      });
+    return {
+      catalog: catalog.map(function(d){
+        return { code:d.code, name:d.name, countries:d.countries.map(function(c){ return c.code; }) }; }),
+      selected: catalog.filter(function(d){ return state[d.code].on; }).map(function(d){
+        var st = state[d.code];
+        return { code:d.code, countries:Array.from(st.countries), rows:st.rows };
+      })
+    };
   }
 
   function push() {
-    try { JFCustomWidget.sendData({ value: JSON.stringify(value()) }); } catch (e) {}
-    var sel = value();
-    document.getElementById("summary").textContent =
-      sel.length ? sel.length + " product(s) selected" : "No products selected yet.";
+    try { JFCustomWidget.sendData({ value: JSON.stringify(value()) }); } catch(e){}
+    var n = value().selected.length;
+    var el = document.getElementById("summary");
+    if (el) el.textContent = n ? n + " product(s) in this shipment" : "No products selected yet.";
+  }
+
+  function rowHtml(i, r, row) {
+    return '<div class="row" data-row="' + i + ':' + r + '">' +
+      '<div class="grid">' + FIELDS.map(function(f){
+        return '<div class="f' + (f.wide?" wide":"") + '"><span>' + esc(f.label) +
+          (f.req?' <b>*</b>':'') + '</span>' +
+          '<input data-dev="' + i + '" data-r="' + r + '" data-k="' + f.k + '"' +
+          (f.ph?' placeholder="'+f.ph+'"':'') +
+          ' value="' + esc(row[f.k]||"") + '"></div>';
+      }).join("") + '</div>' +
+      '<div class="rowbar"><span class="sub">Lot ' + (r+1) + '</span>' +
+        (r>0 ? '<a data-delrow="'+i+':'+r+'">Remove this lot</a>' : '<span></span>') + '</div></div>';
   }
 
   function render() {
-    if (!devices.length) {
-      var diag = '<div class="diag"><b>Diagnostic</b><br>' +
-        'value: ' + (lastRaw ? lastRaw.length + ' chars → ' + esc(lastRaw.slice(0, 200))
-                             : '<b>none received</b>') + '<br><br>' +
-        'ready payload: ' + esc(JSON.stringify(readyData).slice(0, 400)) + '<br><br>' +
-        'iframe query: ' + esc(window.location.search.slice(0, 300)) + '<br><br>' +
-        'referrer: ' + esc(document.referrer || "(empty)") + '</div>';
+    if (!catalog.length) {
       root.innerHTML = '<div class="warn"><b>No products found for your account.</b><br>' +
         'Please open this form using the personalised link we emailed you. ' +
-        'If you reached it another way, contact regulatory@growthimports.eu.</div>' + diag;
+        'If you reached it another way, contact regulatory@growthimports.eu.</div>' +
+        '<div class="diag"><b>Diagnostic</b><br>value: ' +
+        (lastRaw ? lastRaw.length + ' chars → ' + esc(lastRaw.slice(0,200)) : '<b>none received</b>') +
+        '<br><br>ready payload: ' + esc(JSON.stringify(readyData).slice(0,300)) + '</div>';
       fit(); return;
     }
-    root.innerHTML = devices.map(function (d, i) {
-      return '<div class="device" id="d' + i + '">' +
-          '<label class="head"><input type="checkbox" data-dev="' + i + '">' +
-            '<span><span class="code">' + esc(d.code) + '</span>' +
-            (d.name ? '<br><span class="name">' + esc(d.name) + '</span>' : '') + '</span>' +
-          '</label>' +
-          '<div class="body">' +
-            '<div class="label">Countries where these devices will be made available:</div>' +
-            '<div class="countries">' +
-              d.countries.map(function (c, j) {
-                return '<label class="country"><input type="checkbox" data-dev="' + i + '" data-c="' + j + '">' +
-                       esc(c.label) + '</label>';
-              }).join("") +
-            '</div>' +
-            '<div class="actions"><a data-all="' + i + '">Select all</a><a data-none="' + i + '">Clear</a></div>' +
-            '<div class="err">Select at least one country for this product.</div>' +
+    root.innerHTML = catalog.map(function(d,i){
+      var st = state[d.code];
+      return '<div class="device' + (st.on?" on":"") + '" id="d'+i+'">' +
+        '<label class="head"><input type="checkbox" data-dev="'+i+'" data-sel="1"'+(st.on?" checked":"")+'>' +
+          '<span><span class="code">'+esc(d.code)+'</span>' +
+          (d.name?'<br><span class="sub">'+esc(d.name)+'</span>':'') + '</span></label>' +
+        '<div class="body">' +
+          '<div class="lbl">Countries where these devices will be made available:</div>' +
+          '<div class="countries">' + d.countries.map(function(c,j){
+             return '<label class="country"><input type="checkbox" data-dev="'+i+'" data-c="'+j+'"'+
+                    (st.countries.has(c.code)?" checked":"")+'>'+esc(c.label)+'</label>'; }).join("") +
           '</div>' +
-        '</div>';
+          '<div class="links"><a data-all="'+i+'">Select all</a><a data-none="'+i+'">Clear</a></div>' +
+          st.rows.map(function(row,r){ return rowHtml(i,r,row); }).join("") +
+          '<div class="links"><a data-addrow="'+i+'">+ Add another lot for this product</a></div>' +
+          '<div class="err">Complete every field marked * and select at least one country.</div>' +
+        '</div></div>';
     }).join("") + '<div class="summary" id="summary"></div>';
-
-    root.addEventListener("change", onChange);
-    root.addEventListener("click", onClick);
     push(); fit();
   }
 
-  function state(i) {
-    var d = devices[i];
-    if (!picked[d.code]) picked[d.code] = { on: false, countries: new Set() };
-    return picked[d.code];
-  }
-
-  function onChange(e) {
-    var t = e.target; if (t.tagName !== "INPUT") return;
-    var i = +t.getAttribute("data-dev"), st = state(i);
-    if (t.hasAttribute("data-c")) {
-      var c = devices[i].countries[+t.getAttribute("data-c")].code;
-      t.checked ? st.countries.add(c) : st.countries.delete(c);
-    } else {
-      st.on = t.checked;
-      document.getElementById("d" + i).classList.toggle("on", t.checked);
+  root.addEventListener("change", function(e){
+    var t=e.target; if (t.tagName!=="INPUT") return;
+    var i=+t.getAttribute("data-dev"); if (isNaN(i)) return;
+    var st=state[catalog[i].code];
+    if (t.hasAttribute("data-sel")) { st.on=t.checked; document.getElementById("d"+i).classList.toggle("on",t.checked); }
+    else if (t.hasAttribute("data-c")) {
+      var code=catalog[i].countries[+t.getAttribute("data-c")].code;
+      t.checked ? st.countries.add(code) : st.countries.delete(code);
+    } else if (t.hasAttribute("data-k")) {
+      st.rows[+t.getAttribute("data-r")][t.getAttribute("data-k")] = t.value;
+      t.classList.remove("miss");
     }
-    document.getElementById("d" + i).classList.remove("bad");
-    push(); fit();
-  }
-
-  function onClick(e) {
-    var all = e.target.getAttribute && e.target.getAttribute("data-all");
-    var none = e.target.getAttribute && e.target.getAttribute("data-none");
-    if (all === null && none === null) return;
-    var i = +(all !== null ? all : none), st = state(i);
-    devices[i].countries.forEach(function (c, j) {
-      var box = root.querySelector('input[data-dev="' + i + '"][data-c="' + j + '"]');
-      box.checked = (all !== null);
-      box.checked ? st.countries.add(c.code) : st.countries.delete(c.code);
-    });
-    push(); fit();
-  }
-
-  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
-    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
-
-  JFCustomWidget.subscribe("ready", function (data) {
-    readyData = data;
-    devices = parse(data && (data.value !== undefined ? data.value : data.defaultValue));
-    // Restore previous selections when GI reopens the submission.
-    try {
-      var prev = JSON.parse(data.value);
-      if (Array.isArray(prev) && prev.length && prev[0].countries && !prev[0].countries.length === false) {
-        prev.forEach(function (p) {
-          if (p.code && Array.isArray(p.countries) && p.countries.length) {
-            picked[p.code] = { on: true, countries: new Set(p.countries) };
-          }
-        });
-      }
-    } catch (e) {}
-    render();
-    // Re-apply restored ticks to the DOM.
-    devices.forEach(function (d, i) {
-      var st = picked[d.code]; if (!st || !st.on) return;
-      var head = root.querySelector('input[data-dev="' + i + '"]:not([data-c])');
-      if (head) { head.checked = true; document.getElementById("d" + i).classList.add("on"); }
-      d.countries.forEach(function (c, j) {
-        if (st.countries.has(c.code)) {
-          var box = root.querySelector('input[data-dev="' + i + '"][data-c="' + j + '"]');
-          if (box) box.checked = true;
-        }
-      });
-    });
+    document.getElementById("d"+i).classList.remove("bad");
     push(); fit();
   });
 
-  JFCustomWidget.subscribe("submit", function () {
-    var sel = value(), bad = false;
-    devices.forEach(function (d, i) {
-      var st = picked[d.code];
-      var empty = st && st.on && st.countries.size === 0;
-      document.getElementById("d" + i) && document.getElementById("d" + i).classList.toggle("bad", !!empty);
-      if (empty) bad = true;
-    });
-    if (bad || !sel.length) {
-      fit();
-      JFCustomWidget.sendSubmit({ valid: false, value: "" });
-      return;
+  root.addEventListener("input", function(e){
+    var t=e.target;
+    if (t.tagName==="INPUT" && t.hasAttribute("data-k")) {
+      var i=+t.getAttribute("data-dev");
+      state[catalog[i].code].rows[+t.getAttribute("data-r")][t.getAttribute("data-k")] = t.value;
+      t.classList.remove("miss"); push();
     }
-    JFCustomWidget.sendSubmit({ valid: true, value: JSON.stringify(sel) });
+  });
+
+  root.addEventListener("click", function(e){
+    var g=function(a){ return e.target.getAttribute && e.target.getAttribute(a); };
+    var all=g("data-all"), none=g("data-none"), add=g("data-addrow"), del=g("data-delrow");
+    if (all!==null && all!==undefined) { toggleAll(+all,true); }
+    else if (none!==null && none!==undefined) { toggleAll(+none,false); }
+    else if (add!==null && add!==undefined) {
+      var i=+add; state[catalog[i].code].rows.push(blankRow(catalog[i])); render();
+    } else if (del!==null && del!==undefined) {
+      var p=del.split(":"); state[catalog[+p[0]].code].rows.splice(+p[1],1); render();
+    }
+  });
+
+  function toggleAll(i,on){
+    var d=catalog[i], st=state[d.code];
+    d.countries.forEach(function(c,j){
+      var box=root.querySelector('input[data-dev="'+i+'"][data-c="'+j+'"]');
+      if (box) box.checked=on;
+      on ? st.countries.add(c.code) : st.countries.delete(c.code);
+    });
+    push();
+  }
+
+  JFCustomWidget.subscribe("ready", function(data){
+    readyData = data;
+    load(data && (data.value!==undefined ? data.value : data.defaultValue));
+    render();
+  });
+
+  JFCustomWidget.subscribe("submit", function(){
+    var v=value(), bad=false;
+    catalog.forEach(function(d,i){
+      var st=state[d.code]; if (!st.on) return;
+      var problem = st.countries.size===0;
+      st.rows.forEach(function(row,r){
+        FIELDS.forEach(function(f){
+          if (!f.req) return;
+          if (!String(row[f.k]||"").trim()) {
+            problem=true;
+            var box=root.querySelector('input[data-dev="'+i+'"][data-r="'+r+'"][data-k="'+f.k+'"]');
+            if (box) box.classList.add("miss");
+          }
+        });
+      });
+      var el=document.getElementById("d"+i);
+      if (el) el.classList.toggle("bad", problem);
+      if (problem) bad=true;
+    });
+    if (bad || !v.selected.length) { fit(); JFCustomWidget.sendSubmit({valid:false, value:""}); return; }
+    JFCustomWidget.sendSubmit({ valid:true, value: JSON.stringify(v) });
   });
 })();
 </script>
