@@ -10,8 +10,14 @@
   body { font:14px/1.5 "Philosopher",-apple-system,Segoe UI,Roboto,sans-serif; margin:0; color:#1f2328; }
   .device { border:1px solid var(--line); border-radius:8px; margin-bottom:10px; }
   .device.on { border-color:var(--accent); }
-  .head { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; background:#fafbfc; cursor:pointer; border-radius:7px 7px 0 0; }
-  .device.on .head { background:#f1f6fa; }
+  .head { display:flex; align-items:center; gap:11px; padding:11px 13px; background:#fafbfc; cursor:pointer;
+          border-radius:7px 7px 0 0; transition:background .12s; }
+  .head:hover { background:#f3f5f7; }
+  .device.on .head { background:#eef4f9; }
+  .head > input[type=checkbox] { width:17px; height:17px; margin:0; flex:0 0 auto; accent-color:var(--accent); }
+  .titles { display:flex; flex-direction:column; min-width:0; flex:1; }
+  .pill { margin-left:auto; font-size:11.5px; color:var(--accent); background:#e8f0f7; border-radius:20px;
+          padding:3px 10px; white-space:nowrap; }
   .code { font-weight:600; }
   .sub { color:var(--muted); font-size:12.5px; }
   .body { display:none; padding:2px 12px 12px 12px; }
@@ -142,8 +148,10 @@
       var st = state[d.code];
       return '<div class="device' + (st.on?" on":"") + '" id="d'+i+'">' +
         '<label class="head"><input type="checkbox" data-dev="'+i+'" data-sel="1"'+(st.on?" checked":"")+'>' +
-          '<span><span class="code">'+esc(d.code)+'</span>' +
-          (d.name?'<br><span class="sub">'+esc(d.name)+'</span>':'') + '</span></label>' +
+          '<span class="titles"><span class="code">'+esc(d.code)+'</span>' +
+          '<span class="sub">'+esc(d.name || (d.countries.length+' market(s) registered'))+'</span></span>' +
+          (st.on ? '<span class="pill">'+st.countries.size+' of '+d.countries.length+' countries, '+
+                   st.rows.length+' lot'+(st.rows.length>1?'s':'')+'</span>' : '') + '</label>' +
         '<div class="body">' +
           '<div class="lbl">Countries where these devices will be made available:</div>' +
           '<div class="countries">' + d.countries.map(function(c,j){
@@ -172,6 +180,7 @@
       t.classList.remove("miss");
     }
     document.getElementById("d"+i).classList.remove("bad");
+    if (t.hasAttribute("data-sel") || t.hasAttribute("data-c")) { render(); return; }
     push(); fit();
   });
 
