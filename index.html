@@ -16,31 +16,31 @@
   .device.on .head { background:#eef4f9; }
   .head > input[type=checkbox] { width:17px; height:17px; margin:0; flex:0 0 auto; accent-color:var(--accent); }
   .titles { display:flex; flex-direction:column; min-width:0; flex:1; }
-  .pill { margin-left:auto; font-size:11.5px; color:var(--accent); background:#e8f0f7; border-radius:20px;
-          padding:3px 10px; white-space:nowrap; }
   .code { font-weight:600; }
   .sub { color:var(--muted); font-size:12.5px; }
-  .body { display:none; padding:2px 12px 12px 12px; }
+  .pill { margin-left:auto; font-size:11.5px; color:var(--accent); background:#e8f0f7; border-radius:20px;
+          padding:3px 10px; white-space:nowrap; }
+  .body { display:none; padding:2px 13px 13px; }
   .device.on .body { display:block; }
   .lbl { font-size:12px; color:var(--muted); margin:10px 0 5px; }
   .countries { display:flex; flex-wrap:wrap; gap:6px 14px; }
   .country { display:flex; align-items:center; gap:6px; font-size:13px; }
+  .country input { accent-color:var(--accent); }
   .links { margin-top:6px; font-size:12px; }
   .links a { color:var(--accent); text-decoration:underline; cursor:pointer; margin-right:12px; }
-  .row { border-top:1px dashed var(--line); padding-top:8px; margin-top:8px; }
-  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 10px; }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px 11px; margin-top:12px;
+          border-top:1px solid var(--line); padding-top:12px; }
   .f { display:flex; flex-direction:column; gap:3px; }
   .f.wide { grid-column:1 / -1; }
   .f span { font-size:11.5px; color:var(--muted); }
   .f span b { color:var(--bad); font-weight:400; }
-  input { font:13px inherit; padding:6px 7px; border:1px solid #ccd0d5; border-radius:5px; width:100%; box-sizing:border-box; }
+  input[type=text] { font:13px inherit; padding:6px 7px; border:1px solid #ccd0d5; border-radius:5px;
+                     width:100%; box-sizing:border-box; }
   input.miss { border-color:var(--bad); background:#fff7f7; }
-  .rowbar { display:flex; justify-content:space-between; align-items:center; font-size:12px; margin-top:6px; }
-  .rowbar a { color:var(--accent); text-decoration:underline; cursor:pointer; }
   .warn { background:#fff6e5; border:1px solid #f0c36d; border-radius:8px; padding:10px 12px; font-size:13px; }
   .diag { margin-top:10px; padding:8px 10px; background:#f5f6f8; border:1px solid var(--line); border-radius:6px;
           font:11px/1.4 ui-monospace,Menlo,monospace; color:#444; word-break:break-all; }
-  .err { color:var(--bad); font-size:12.5px; margin-top:8px; display:none; }
+  .err { color:var(--bad); font-size:12.5px; margin-top:9px; display:none; }
   .device.bad .err { display:block; }
   .summary { font-size:12.5px; color:var(--muted); margin-top:10px; }
 </style>
@@ -51,12 +51,12 @@
 <script>
 (function () {
   var FIELDS = [
-    { k:"name",       label:"Product Name (per B-UDI-DI)", req:true },
-    { k:"articleNo",  label:"Article No (Ref / Cat. No)",  req:true },
-    { k:"udi",        label:"UDI-DI / UDI-PI",             req:true, wide:true },
-    { k:"lot",        label:"Lot No.",                     req:true },
-    { k:"shelfLife",  label:"Shelf Life (if applicable)",  req:false, ph:"YYYY-MM-DD" },
-    { k:"qty",        label:"Total Order Quantity",        req:true }
+    { k:"name",      label:"Product Name (per B-UDI-DI)", req:true },
+    { k:"articleNo", label:"Article No (Ref / Cat. No)",  req:true },
+    { k:"udi",       label:"UDI-DI / UDI-PI",             req:true, wide:true },
+    { k:"lot",       label:"Lot No.",                     req:true },
+    { k:"shelfLife", label:"Shelf Life (if applicable)",  req:false },
+    { k:"qty",       label:"Total Order Quantity",        req:true }
   ];
 
   var catalog = [], state = {}, lastRaw = "", readyData = null;
@@ -77,7 +77,7 @@
     return null;
   }
 
-  function blankRow(dev){ return { name: dev.name || "", articleNo:"", udi:"", lot:"", shelfLife:"", qty:"" }; }
+  function blank(){ var o={}; FIELDS.forEach(function(f){ o[f.k]=""; }); return o; }
 
   function load(raw) {
     var data = decode(raw);
@@ -93,13 +93,13 @@
       };
     }).filter(function(d){ return d.code; });
 
-    catalog.forEach(function(d){ state[d.code] = { on:false, countries:new Set(), rows:[blankRow(d)] }; });
+    catalog.forEach(function(d){ state[d.code] = { on:false, countries:new Set(), data:blank() }; });
 
-    (data.selected || []).forEach(function(sel){
+    (data.selected||[]).forEach(function(sel){
       var st = state[sel.code]; if (!st) return;
       st.on = true;
-      st.countries = new Set(sel.countries || []);
-      if (Array.isArray(sel.rows) && sel.rows.length) st.rows = sel.rows;
+      st.countries = new Set(sel.countries||[]);
+      FIELDS.forEach(function(f){ if (sel[f.k] != null) st.data[f.k] = sel[f.k]; });
     });
   }
 
@@ -108,8 +108,9 @@
       catalog: catalog.map(function(d){
         return { code:d.code, name:d.name, countries:d.countries.map(function(c){ return c.code; }) }; }),
       selected: catalog.filter(function(d){ return state[d.code].on; }).map(function(d){
-        var st = state[d.code];
-        return { code:d.code, countries:Array.from(st.countries), rows:st.rows };
+        var st = state[d.code], out = { code:d.code, countries:Array.from(st.countries) };
+        FIELDS.forEach(function(f){ out[f.k] = st.data[f.k]; });
+        return out;
       })
     };
   }
@@ -119,19 +120,6 @@
     var n = value().selected.length;
     var el = document.getElementById("summary");
     if (el) el.textContent = n ? n + " product(s) in this shipment" : "No products selected yet.";
-  }
-
-  function rowHtml(i, r, row) {
-    return '<div class="row" data-row="' + i + ':' + r + '">' +
-      '<div class="grid">' + FIELDS.map(function(f){
-        return '<div class="f' + (f.wide?" wide":"") + '"><span>' + esc(f.label) +
-          (f.req?' <b>*</b>':'') + '</span>' +
-          '<input data-dev="' + i + '" data-r="' + r + '" data-k="' + f.k + '"' +
-          (f.ph?' placeholder="'+f.ph+'"':'') +
-          ' value="' + esc(row[f.k]||"") + '"></div>';
-      }).join("") + '</div>' +
-      '<div class="rowbar"><span class="sub">Lot ' + (r+1) + '</span>' +
-        (r>0 ? '<a data-delrow="'+i+':'+r+'">Remove this lot</a>' : '<span></span>') + '</div></div>';
   }
 
   function render() {
@@ -146,12 +134,12 @@
     }
     root.innerHTML = catalog.map(function(d,i){
       var st = state[d.code];
-      return '<div class="device' + (st.on?" on":"") + '" id="d'+i+'">' +
+      return '<div class="device'+(st.on?" on":"")+'" id="d'+i+'">' +
         '<label class="head"><input type="checkbox" data-dev="'+i+'" data-sel="1"'+(st.on?" checked":"")+'>' +
           '<span class="titles"><span class="code">'+esc(d.code)+'</span>' +
           '<span class="sub">'+esc(d.name || (d.countries.length+' market(s) registered'))+'</span></span>' +
-          (st.on ? '<span class="pill">'+st.countries.size+' of '+d.countries.length+' countries, '+
-                   st.rows.length+' lot'+(st.rows.length>1?'s':'')+'</span>' : '') + '</label>' +
+          (st.on ? '<span class="pill">'+st.countries.size+' of '+d.countries.length+' countries</span>' : '') +
+        '</label>' +
         '<div class="body">' +
           '<div class="lbl">Countries where these devices will be made available:</div>' +
           '<div class="countries">' + d.countries.map(function(c,j){
@@ -159,9 +147,11 @@
                     (st.countries.has(c.code)?" checked":"")+'>'+esc(c.label)+'</label>'; }).join("") +
           '</div>' +
           '<div class="links"><a data-all="'+i+'">Select all</a><a data-none="'+i+'">Clear</a></div>' +
-          st.rows.map(function(row,r){ return rowHtml(i,r,row); }).join("") +
-          '<div class="links"><a data-addrow="'+i+'">+ Add another lot for this product</a></div>' +
-          '<div class="err">Complete every field marked * and select at least one country.</div>' +
+          '<div class="grid">' + FIELDS.map(function(f){
+             return '<div class="f'+(f.wide?" wide":"")+'"><span>'+esc(f.label)+(f.req?' <b>*</b>':'')+'</span>' +
+               '<input type="text" data-dev="'+i+'" data-k="'+f.k+'" value="'+esc(st.data[f.k])+'"></div>';
+          }).join("") + '</div>' +
+          '<div class="err">Select at least one country and complete every field marked *.</div>' +
         '</div></div>';
     }).join("") + '<div class="summary" id="summary"></div>';
     push(); fit();
@@ -171,48 +161,36 @@
     var t=e.target; if (t.tagName!=="INPUT") return;
     var i=+t.getAttribute("data-dev"); if (isNaN(i)) return;
     var st=state[catalog[i].code];
-    if (t.hasAttribute("data-sel")) { st.on=t.checked; document.getElementById("d"+i).classList.toggle("on",t.checked); }
-    else if (t.hasAttribute("data-c")) {
+    if (t.hasAttribute("data-sel")) { st.on=t.checked; render(); return; }
+    if (t.hasAttribute("data-c")) {
       var code=catalog[i].countries[+t.getAttribute("data-c")].code;
       t.checked ? st.countries.add(code) : st.countries.delete(code);
-    } else if (t.hasAttribute("data-k")) {
-      st.rows[+t.getAttribute("data-r")][t.getAttribute("data-k")] = t.value;
-      t.classList.remove("miss");
+      render(); return;
     }
-    document.getElementById("d"+i).classList.remove("bad");
-    if (t.hasAttribute("data-sel") || t.hasAttribute("data-c")) { render(); return; }
-    push(); fit();
   });
 
   root.addEventListener("input", function(e){
     var t=e.target;
     if (t.tagName==="INPUT" && t.hasAttribute("data-k")) {
       var i=+t.getAttribute("data-dev");
-      state[catalog[i].code].rows[+t.getAttribute("data-r")][t.getAttribute("data-k")] = t.value;
-      t.classList.remove("miss"); push();
+      state[catalog[i].code].data[t.getAttribute("data-k")] = t.value;
+      t.classList.remove("miss");
+      var el=document.getElementById("d"+i); if (el) el.classList.remove("bad");
+      push();
     }
   });
 
   root.addEventListener("click", function(e){
     var g=function(a){ return e.target.getAttribute && e.target.getAttribute(a); };
-    var all=g("data-all"), none=g("data-none"), add=g("data-addrow"), del=g("data-delrow");
-    if (all!==null && all!==undefined) { toggleAll(+all,true); }
-    else if (none!==null && none!==undefined) { toggleAll(+none,false); }
-    else if (add!==null && add!==undefined) {
-      var i=+add; state[catalog[i].code].rows.push(blankRow(catalog[i])); render();
-    } else if (del!==null && del!==undefined) {
-      var p=del.split(":"); state[catalog[+p[0]].code].rows.splice(+p[1],1); render();
-    }
+    var all=g("data-all"), none=g("data-none");
+    if (all!=null) toggleAll(+all,true);
+    else if (none!=null) toggleAll(+none,false);
   });
 
   function toggleAll(i,on){
     var d=catalog[i], st=state[d.code];
-    d.countries.forEach(function(c,j){
-      var box=root.querySelector('input[data-dev="'+i+'"][data-c="'+j+'"]');
-      if (box) box.checked=on;
-      on ? st.countries.add(c.code) : st.countries.delete(c.code);
-    });
-    push();
+    d.countries.forEach(function(c){ on ? st.countries.add(c.code) : st.countries.delete(c.code); });
+    render();
   }
 
   JFCustomWidget.subscribe("ready", function(data){
@@ -226,15 +204,13 @@
     catalog.forEach(function(d,i){
       var st=state[d.code]; if (!st.on) return;
       var problem = st.countries.size===0;
-      st.rows.forEach(function(row,r){
-        FIELDS.forEach(function(f){
-          if (!f.req) return;
-          if (!String(row[f.k]||"").trim()) {
-            problem=true;
-            var box=root.querySelector('input[data-dev="'+i+'"][data-r="'+r+'"][data-k="'+f.k+'"]');
-            if (box) box.classList.add("miss");
-          }
-        });
+      FIELDS.forEach(function(f){
+        if (!f.req) return;
+        if (!String(st.data[f.k]||"").trim()) {
+          problem=true;
+          var box=root.querySelector('input[data-dev="'+i+'"][data-k="'+f.k+'"]');
+          if (box) box.classList.add("miss");
+        }
       });
       var el=document.getElementById("d"+i);
       if (el) el.classList.toggle("bad", problem);
