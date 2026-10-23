@@ -66,11 +66,40 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){
     return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]; }); }
 
+  // Stored value is plain delimited text, NOT JSON: JotFlow turns any JSON-looking value into an HTML table in
+  // which nested lists become the word "Array". One record per " ;; ", fields split by "|":
+  //   C|code|name|AT,DE,...                                          catalog entry (devices + allowed countries)
+  //   S|code|AT,DE|name|articleNo|udi|lot|shelfLife|qty              a device that is part of this shipment
+  // The prefill link still carries JSON (a URL parameter is not touched by JotFlow), so decode() accepts both.
+  var REC = " ;; ";
+  function clean(s){ return String(s==null?"":s).replace(/\|/g,"/").replace(/;;+/g,";").replace(/[\r\n]+/g," ").trim(); }
+  function encodeValue(v) {
+    var rows = [];
+    v.catalog.forEach(function(d){ rows.push(["C", clean(d.code), clean(d.name), d.countries.join(",")].join("|")); });
+    v.selected.forEach(function(d){
+      rows.push(["S", clean(d.code), d.countries.join(","), clean(d.name), clean(d.articleNo), clean(d.udi),
+                 clean(d.lot), clean(d.shelfLife), clean(d.qty)].join("|"));
+    });
+    return rows.join(REC);
+  }
+  function decodeText(s) {
+    var out = { catalog: [], selected: [] };
+    s.split(REC).forEach(function(r){
+      var p = r.split("|"), cs = function(x){ return x ? x.split(",").filter(Boolean) : []; };
+      if (p[0] === "C") out.catalog.push({ code:p[1], name:p[2], countries:cs(p[3]) });
+      else if (p[0] === "S") out.selected.push({ code:p[1], countries:cs(p[2]), name:p[3], articleNo:p[4],
+                                                 udi:p[5], lot:p[6], shelfLife:p[7], qty:p[8] });
+    });
+    return out;
+  }
+
   function decode(raw) {
     lastRaw = (raw==null) ? "" : String(raw);
     if (!raw) return null;
     if (typeof raw !== "string") return raw;
-    var s = raw.trim().replace(/&quot;/g,'"').replace(/&#34;/g,'"').replace(/&amp;/g,"&");
+    var s = raw.trim().replace(/&quot;/g,'"').replace(/&#34;/g,'"').replace(/&#39;/g,"'")
+               .replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&");
+    if (/^[CS]\|/.test(s)) return decodeText(s);
     var tries = [s];
     if (/%5B|%7B|%22/i.test(s)) { try { tries.push(decodeURIComponent(s)); } catch(e){} }
     for (var i=0;i<tries.length;i++){ try { return JSON.parse(tries[i]); } catch(e){} }
@@ -116,7 +145,7 @@
   }
 
   function push() {
-    try { JFCustomWidget.sendData({ value: JSON.stringify(value()) }); } catch(e){}
+    try { JFCustomWidget.sendData({ value: encodeValue(value()) }); } catch(e){}
     var n = value().selected.length;
     var el = document.getElementById("summary");
     if (el) el.textContent = n ? n + " product(s) in this shipment" : "No products selected yet.";
@@ -217,7 +246,7 @@
       if (problem) bad=true;
     });
     if (bad || !v.selected.length) { fit(); JFCustomWidget.sendSubmit({valid:false, value:""}); return; }
-    JFCustomWidget.sendSubmit({ valid:true, value: JSON.stringify(v) });
+    JFCustomWidget.sendSubmit({ valid:true, value: encodeValue(v) });
   });
 })();
 </script>
