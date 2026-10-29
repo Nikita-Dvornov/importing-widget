@@ -34,9 +34,10 @@
   .f.wide { grid-column:1 / -1; }
   .f span { font-size:11.5px; color:var(--muted); }
   .f span b { color:var(--bad); font-weight:400; }
-  input[type=text] { font:13px inherit; padding:6px 7px; border:1px solid #ccd0d5; border-radius:5px;
+  input[type=text], textarea { font:13px inherit; padding:6px 7px; border:1px solid #ccd0d5; border-radius:5px;
                      width:100%; box-sizing:border-box; }
-  input.miss { border-color:var(--bad); background:#fff7f7; }
+  textarea { min-height:64px; resize:vertical; line-height:1.4; font-family:inherit; overflow:hidden; }
+  input.miss, textarea.miss { border-color:var(--bad); background:#fff7f7; }
   .warn { background:#fff6e5; border:1px solid #f0c36d; border-radius:8px; padding:10px 12px; font-size:13px; }
   .diag { margin-top:10px; padding:8px 10px; background:#f5f6f8; border:1px solid var(--line); border-radius:6px;
           font:11px/1.4 ui-monospace,Menlo,monospace; color:#444; word-break:break-all; }
@@ -53,7 +54,7 @@
   var FIELDS = [
     { k:"name",      label:"Product Name (per B-UDI-DI)", req:true },
     { k:"articleNo", label:"Article No (Ref / Cat. No)",  req:true },
-    { k:"udi",       label:"UDI-DI / UDI-PI",             req:true, wide:true },
+    { k:"udi",       label:"UDI-DI / UDI-PI (one per line if several)", req:true, wide:true, long:true },
     { k:"lot",       label:"Lot No.",                     req:true },
     { k:"shelfLife", label:"Shelf Life (if applicable)",  req:false },
     { k:"qty",       label:"Total Order Quantity",        req:true }
@@ -71,8 +72,11 @@
   //   C|code|name|AT,DE,...                                          catalog entry (devices + allowed countries)
   //   S|code|AT,DE|name|articleNo|udi|lot|shelfLife|qty              a device that is part of this shipment
   // The prefill link still carries JSON (a URL parameter is not touched by JotFlow), so decode() accepts both.
-  var REC = " ;; ";
-  function clean(s){ return String(s==null?"":s).replace(/\|/g,"/").replace(/;;+/g,";").replace(/[\r\n]+/g," ").trim(); }
+  // A long field (UDI-DI / UDI-PI) may hold several lines; each line break is stored as "; " and turned back into
+  // a line break when a saved submission is reopened, so the stored format stays one line per record.
+  var REC = " ;; ", LINE = "; ";
+  function clean(s){ return String(s==null?"":s).replace(/\|/g,"/").replace(/\s*[\r\n]+\s*/g,LINE).replace(/;;+/g,";").trim(); }
+  function unlines(s){ return String(s==null?"":s).split(LINE).join("\n"); }
   function encodeValue(v) {
     var rows = [];
     v.catalog.forEach(function(d){ rows.push(["C", clean(d.code), clean(d.name), d.countries.join(",")].join("|")); });
@@ -128,7 +132,7 @@
       var st = state[sel.code]; if (!st) return;
       st.on = true;
       st.countries = new Set(sel.countries||[]);
-      FIELDS.forEach(function(f){ if (sel[f.k] != null) st.data[f.k] = sel[f.k]; });
+      FIELDS.forEach(function(f){ if (sel[f.k] != null) st.data[f.k] = f.long ? unlines(sel[f.k]) : sel[f.k]; });
     });
   }
 
@@ -178,13 +182,18 @@
           '<div class="links"><a data-all="'+i+'">Select all</a><a data-none="'+i+'">Clear</a></div>' +
           '<div class="grid">' + FIELDS.map(function(f){
              return '<div class="f'+(f.wide?" wide":"")+'"><span>'+esc(f.label)+(f.req?' <b>*</b>':'')+'</span>' +
-               '<input type="text" data-dev="'+i+'" data-k="'+f.k+'" value="'+esc(st.data[f.k])+'"></div>';
+               (f.long ? '<textarea rows="3" data-dev="'+i+'" data-k="'+f.k+'">'+esc(st.data[f.k])+'</textarea>'
+                       : '<input type="text" data-dev="'+i+'" data-k="'+f.k+'" value="'+esc(st.data[f.k])+'">') + '</div>';
           }).join("") + '</div>' +
           '<div class="err">Select at least one country and complete every field marked *.</div>' +
         '</div></div>';
     }).join("") + '<div class="summary" id="summary"></div>';
+    Array.prototype.forEach.call(root.querySelectorAll("textarea"), grow);
     push(); fit();
   }
+
+  // Grow a long field with its text so nothing hides behind a scrollbar inside the form's iframe.
+  function grow(t){ if (!t.offsetParent) return; t.style.height = "auto"; t.style.height = (t.scrollHeight + 2) + "px"; }
 
   root.addEventListener("change", function(e){
     var t=e.target; if (t.tagName!=="INPUT") return;
@@ -200,11 +209,12 @@
 
   root.addEventListener("input", function(e){
     var t=e.target;
-    if (t.tagName==="INPUT" && t.hasAttribute("data-k")) {
+    if ((t.tagName==="INPUT" || t.tagName==="TEXTAREA") && t.hasAttribute("data-k")) {
       var i=+t.getAttribute("data-dev");
       state[catalog[i].code].data[t.getAttribute("data-k")] = t.value;
       t.classList.remove("miss");
       var el=document.getElementById("d"+i); if (el) el.classList.remove("bad");
+      if (t.tagName==="TEXTAREA") { grow(t); fit(); }
       push();
     }
   });
@@ -237,7 +247,7 @@
         if (!f.req) return;
         if (!String(st.data[f.k]||"").trim()) {
           problem=true;
-          var box=root.querySelector('input[data-dev="'+i+'"][data-k="'+f.k+'"]');
+          var box=root.querySelector('[data-dev="'+i+'"][data-k="'+f.k+'"]');
           if (box) box.classList.add("miss");
         }
       });
