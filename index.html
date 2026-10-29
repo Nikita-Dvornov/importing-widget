@@ -110,6 +110,13 @@
     return null;
   }
 
+  // The link carries country codes only (keeps it short); show them as on the Basic UDI-DI form, "DE - Germany".
+  var COUNTRY = { AT:"Austria", BE:"Belgium", BG:"Bulgaria", HR:"Croatia", CY:"Cyprus", CZ:"Czechia", DK:"Denmark",
+    EE:"Estonia", FI:"Finland", FR:"France", DE:"Germany", GR:"Greece", HU:"Hungary", IE:"Ireland", IT:"Italy",
+    LV:"Latvia", LT:"Lithuania", LU:"Luxembourg", MT:"Malta", NL:"Netherlands", PL:"Poland", PT:"Portugal",
+    RO:"Romania", SK:"Slovakia", SI:"Slovenia", ES:"Spain", SE:"Sweden", UA:"Ukraine", GB:"United Kingdom" };
+  function countryLabel(c){ return COUNTRY[c] ? c + " - " + COUNTRY[c] : c; }
+
   function blank(){ var o={}; FIELDS.forEach(function(f){ o[f.k]=""; }); return o; }
 
   function load(raw) {
@@ -122,7 +129,7 @@
         code: String(d.code || d.budidi || "").trim(),
         name: String(d.name || "").trim(),
         countries: (d.countries||[]).map(function(c){
-          return (typeof c === "string") ? {code:c,label:c} : {code:c.code,label:c.label||c.code}; })
+          return (typeof c === "string") ? {code:c,label:countryLabel(c)} : {code:c.code,label:c.label||countryLabel(c.code)}; })
       };
     }).filter(function(d){ return d.code; });
 
