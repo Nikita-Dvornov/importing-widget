@@ -246,6 +246,9 @@
   });
 
   JFCustomWidget.subscribe("submit", function(){
+    // No device list was loaded (old link or bare form address, where the form hides this widget): never block the
+    // submission, whatever the field's required flag says. The old product list takes over in that case.
+    if (!catalog.length) { JFCustomWidget.sendSubmit({ valid:true, value:"" }); return; }
     var v=value(), bad=false;
     catalog.forEach(function(d,i){
       var st=state[d.code]; if (!st.on) return;
